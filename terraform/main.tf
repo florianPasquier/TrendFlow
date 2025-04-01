@@ -39,3 +39,8 @@ resource "google_bigquery_table" "ecommerce_sales_table" {
     }
   ])
 }
+
+resource "google_storage_bucket" "trendflow-bucket" {
+  name     = "${var.project_id}-trendflow-bucket" #(1)!
+  location = var.region
+}
