@@ -2,8 +2,15 @@ from flask import Flask, jsonify
 import requests
 from bs4 import BeautifulSoup
 from datetime import datetime
+"""
+https://github.com/Mf4Tn/trends24Scraper
+"""
+
 
 def difference_time(timestamp):
+    """
+    calculate the difference between the current time and the time of the trend
+    """
     now = datetime.now().timestamp()
     difference = (now - int(float(timestamp))) / 3600
     if int(float(difference)) <= 0:
@@ -12,6 +19,21 @@ def difference_time(timestamp):
         return str(int(float(difference))) + (' Hour' if int(float(difference)) == 1 else ' Hours')
 
 def get_info():
+    """
+    get the trends from the website trends24.in
+    and return a json with the trends
+    in the format :
+    {
+        "trend": [
+            {
+                "name": "trend_name",
+                "count": "trend_count"
+            },
+            ...
+        ],
+        "timestamp": "timestamp"
+    }
+    """
     response = {}
     web_response = requests.get("https://trends24.in/france",headers={"user-agent":"Mozilla/5.0"})
     content_bs = BeautifulSoup(web_response.content,'html.parser')
