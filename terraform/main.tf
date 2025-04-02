@@ -22,7 +22,7 @@ resource "google_bigquery_table" "ecommerce_sales_table" {
       type = "STRING"
       mode = "REQUIRED"
     },
-      {
+    {
       name = "Product_Name"
       type = "STRING"
       mode = "REQUIRED"
