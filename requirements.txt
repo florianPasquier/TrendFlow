@@ -1,0 +1,4 @@
+apache-airflow
+pyspark
+dbt-core
+dbt-postgres  # ou dbt-snowflake, dbt-bigquery selon ton data warehouse

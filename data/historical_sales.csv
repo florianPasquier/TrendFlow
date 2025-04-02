@@ -1,0 +1,17 @@
+Date,Category,Sub-Category,Product,Sales,Quantity
+2025-01-01,Beverages,Soft Drinks,Coca-Cola,150.00,50
+2025-01-01,Beverages,Juices,Orange Juice,120.00,40
+2025-01-02,Snacks,Chips,Lays Classic,80.00,20
+2025-01-02,Snacks,Chocolates,KitKat,100.00,25
+2025-01-03,Dairy,Milk,Whole Milk,200.00,100
+2025-01-03,Dairy,Cheese,Cheddar Cheese,180.00,30
+2025-01-04,Bakery,Bread,Whole Wheat Bread,90.00,45
+2025-01-04,Bakery,Cakes,Chocolate Cake,250.00,10
+2025-01-05,Fruits,Fresh Fruits,Apples,300.00,60
+2025-01-05,Fruits,Dried Fruits,Almonds,400.00,20
+2025-01-06,Vegetables,Leafy Greens,Spinach,50.00,25
+2025-01-06,Vegetables,Root Vegetables,Carrots,70.00,35
+2025-01-07,Meat,Poultry,Chicken Breast,500.00,50
+2025-01-07,Meat,Red Meat,Beef Steak,600.00,30
+2025-01-08,Seafood,Fish,Salmon,700.00,20
+2025-01-08,Seafood,Shellfish,Shrimps,800.00,25
