@@ -13,7 +13,7 @@ params = {
 
 def get_trends(params):
     search = client.search(params)
-    results = search
+    results = search.as_dict()
     return results
 
 def __main__(*args, **kwargs):
