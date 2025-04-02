@@ -5,7 +5,8 @@ import pandas as pd
 from google.cloud import bigquery
 
 # GCS CSV file path
-GCS_PATH = "gs://trendflow-455409-trendflow-bucket/Amazon Sale Report.csv"
+GCS_SALES_PATH = "gs://trendflow-455409-trendflow-bucket/Amazon Sale Report.csv"
+GCS_ASIN_PRODUCT_MAPPING_PATH = "gs://trendflow-455409-trendflow-bucket/asin_to_product_mapping.csv"
 
 # BigQuery settings
 PROJECT_ID = "trendflow-455409"
@@ -21,7 +22,7 @@ default_args = {
 def load_csv_from_gcs_to_bq():
     print("📥 Reading CSV file from GCS...")
     # Read the CSV from GCS
-    df = pd.read_csv(GCS_PATH, storage_options={"token": "default"})
+    df = pd.read_csv(GCS_SALES_PATH, storage_options={"token": "default"})
 
     print("🧼 Normalizing column names...")
     # Rename columns to match BigQuery schema (replace spaces with underscores)
@@ -36,12 +37,14 @@ def load_csv_from_gcs_to_bq():
 
     # Filter only expected columns
     expected_columns = ["Date", "ASIN", "Qty", "Sales_Channel", "Category"]
-    df = df[expected_columns]
+    selected_df = df[expected_columns]
+    mapping_df = pd.read_csv(GCS_ASIN_PRODUCT_MAPPING_PATH, storage_options={"token": "default"})
+    merged_df = selected_df.merge(mapping_df, on="ASIN", how="right")
 
     print("🔁 Converting data types...")
     # Convert types to match BigQuery schema
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce").dt.date
-    df["Qty"] = pd.to_numeric(df["Qty"], errors="coerce")
+    merged_df["Date"] = pd.to_datetime(merged_df["Date"], errors="coerce").merged_df.date
+    merged_df["Qty"] = pd.to_numeric(merged_df["Qty"], errors="coerce")
 
     print("🚀 Uploading to BigQuery...")
     # Initialize BigQuery client
@@ -50,7 +53,7 @@ def load_csv_from_gcs_to_bq():
 
     # Load to BigQuery in append mode
     job = client.load_table_from_dataframe(
-        df,
+        merged_df,
         table_ref,
         job_config=bigquery.LoadJobConfig(
             write_disposition="WRITE_APPEND",
