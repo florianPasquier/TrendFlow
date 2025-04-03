@@ -1,0 +1,21 @@
+from pyspark.sql import SparkSession
+from pyspark.ml.feature import VectorAssembler, StandardScaler
+
+spark = SparkSession.builder.appName("Data_Preparation").getOrCreate()
+
+# Chargement des données depuis BigQuery
+sales_df = spark.read.format("bigquery").option("table", "trendflow.sales_data").load()
+trends_df = spark.read.format("bigquery").option("table", "trendflow.trends_data").load()
+
+# Fusion des données
+df = sales_df.join(trends_df, ["date", "product_category"], "left")
+
+# Vectorisation des tendances et normalisation des ventes
+feature_cols = ["sales", "trend_score"]
+assembler = VectorAssembler(inputCols=feature_cols, outputCol="features")
+df = assembler.transform(df)
+
+scaler = StandardScaler(inputCol="features", outputCol="scaled_features", withMean=True, withStd=True)
+df = scaler.fit(df).transform(df)
+
+df.show(5)
