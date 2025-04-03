@@ -28,7 +28,7 @@ def ingest_sales_csv():
     """
     import pandas as pd
     logger = logging.getLogger(__name__)
-    df_sales = pd.read_csv(GCS_SALES_PATH,sep=";")
+    df_sales = pd.read_csv(GCS_SALES_PATH)
     logger.log(1,msg="Sales CSV loaded")
     df_sales.to_csv("/tmp/Amazon Sale Report.csv",index=False)
     return  "/tmp/Amazon Sale Report.csv"
@@ -39,7 +39,7 @@ def ingest_mapping_csv():
     """
     import pandas as pd
     logger = logging.getLogger(__name__)
-    df_mapping = pd.read_csv(GCS_ASIN_PRODUCT_MAPPING_PATH,sep=";")
+    df_mapping = pd.read_csv(GCS_ASIN_PRODUCT_MAPPING_PATH)
     logger.log(1,msg="asin_to_product_mapping CSV loaded")
     df_mapping.to_csv("/tmp/asin_to_product_mapping.csv",index=False)
     return  "/tmp/asin_to_product_mapping.csv"
@@ -82,16 +82,15 @@ def merge(**kwargs):
     
     # Filter only expected columns
     expected_columns = ["Date", "ASIN", "Qty", "Sales_Channel", "Category"]
-    selected_df = df_sales[expected_columns]    
-    merged_df = selected_df.merge(merged_df, on="ASIN", how="right")
-    
+    selected_df = df_sales[expected_columns]
+    merged_df = selected_df.merge(df_mapping, on="ASIN", how="right")    
     print("🔁 Converting data types...")
     # Convert types to match BigQuery schema
     merged_df["Date"] = pd.to_datetime(merged_df["Date"], errors="coerce").dt.date
     merged_df["Qty"] = pd.to_numeric(merged_df["Qty"], errors="coerce")
 
     merged_df.to_csv("/tmp/sales.csv",index=False)
-    return True 
+    return True     
      
     
 with DAG("load_amazon_sales_from_gcs_to_bq",
