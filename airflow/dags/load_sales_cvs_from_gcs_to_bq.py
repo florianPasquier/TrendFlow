@@ -77,17 +77,34 @@ def merge(**kwargs):
         "Date": "Date",
         "ASIN": "ASIN",
         "Qty": "Qty",
-        "Category": "Category"
+        "Category": "Category",
+        "Amount": "price",
     }, inplace=True)
     
     # Filter only expected columns
-    expected_columns = ["Date", "ASIN", "Qty", "Sales_Channel", "Category"]
+    expected_columns = ["Date", "ASIN", "Qty", "Sales_Channel", "Category", "price"]
     selected_df = df_sales[expected_columns]
     merged_df = selected_df.merge(df_mapping, on="ASIN", how="right")    
+    
+    # Rename ASIN to product_id
+    merged_df.rename(columns={
+        "Date": "sale_date",
+        "ASIN": "product_id",
+        "ProductName": "product_name",
+        "Qty": "quantity_sold",
+        "price": "sale_price",
+        "Category": "category",
+        "Sales_Channel": "region",
+    }, inplace=True)
+    
     print("🔁 Converting data types...")
     # Convert types to match BigQuery schema
-    merged_df["Date"] = pd.to_datetime(merged_df["Date"], errors="coerce").dt.date
-    merged_df["Qty"] = pd.to_numeric(merged_df["Qty"], errors="coerce")
+    merged_df["sale_date"] = pd.to_datetime(merged_df["sale_date"], errors="coerce").dt.date
+    merged_df["quantity_sold"] = pd.to_numeric(merged_df["quantity_sold"], errors="coerce")
+    merged_df["sale_price"] = pd.to_numeric(merged_df["sale_price"], errors="coerce")
+    merged_df["category_id"] = "unknown"
+    merged_df["discount"] = 0.0
+    merged_df["inventory_level"] = 100
 
     merged_df.to_csv("/tmp/sales.csv",index=False)
     return True     
@@ -115,7 +132,7 @@ with DAG("load_amazon_sales_from_gcs_to_bq",
     load_bq_task = GCSToBigQueryOperator(task_id="load_bq",
                                         bucket=BUCKET_ID,
                                         source_objects=["final_sales.csv"],
-                                        destination_project_dataset_table="trendflow.sales",
+                                        destination_project_dataset_table="trendflow.sales_history",
                                         write_disposition="WRITE_TRUNCATE",
                                         gcp_conn_id="bq-admin"                                        
     )

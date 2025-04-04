@@ -43,7 +43,6 @@
 #                                Default: ''
 #
 # Feel free to modify this file to suit your needs.
----
 x-airflow-common:
   &airflow-common
   # In order to add custom dependencies or upgrade provider packages you can use your extended image.
@@ -70,6 +69,7 @@ x-airflow-common:
     # for other purpose (development, test and especially production usage) build/extend Airflow image.
     _PIP_ADDITIONAL_REQUIREMENTS: ${_PIP_ADDITIONAL_REQUIREMENTS:-}
     AIRFLOW_CONN_BQ_ADMIN: google-cloud-platform://?project=trendflow-455409&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fcloud-platform
+    DBT_TOKEN: ${DBT_TOKEN}
     # The following line can be used to set a custom config file, stored in the local config folder
     # If you want to use it, outcomment it and replace airflow.cfg with the name of your config file
     # AIRFLOW_CONFIG: '/opt/airflow/config/airflow.cfg'
@@ -240,9 +240,9 @@ services:
         echo "✅ Creating DBT connection..."
         airflow connections delete dbt || true
         airflow connections add 'dbt' \
-          --conn-type http \
-          --conn-host 'https://cloud.getdbt.com/api/v2/' \
-          --conn-extra "{\"Authorization\": \"Token ${DBT_TOKEN}\"}"
+        --conn-type http \
+        --conn-host 'https://cloud.getdbt.com/api/v2/' \
+        --conn-extra "{\"Authorization\": \"Token ${DBT_TOKEN}\"}"
         exec /entrypoint airflow version
     # yamllint enable rule:line-length
     environment:
