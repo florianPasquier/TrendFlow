@@ -237,6 +237,12 @@ services:
         fi
         mkdir -p /sources/logs /sources/dags /sources/plugins
         chown -R "${AIRFLOW_UID}:0" /sources/{logs,dags,plugins}
+        echo "✅ Creating DBT connection..."
+        airflow connections delete dbt || true
+        airflow connections add 'dbt' \
+          --conn-type http \
+          --conn-host 'https://cloud.getdbt.com/api/v2/' \
+          --conn-extra "{\"Authorization\": \"Token ${DBT_TOKEN}\"}"
         exec /entrypoint airflow version
     # yamllint enable rule:line-length
     environment:
