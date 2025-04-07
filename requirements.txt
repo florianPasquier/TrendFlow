@@ -1,3 +1,4 @@
 pandas
 gcsfs
 google-cloud-bigquery
+openpyxl
