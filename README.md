@@ -31,6 +31,8 @@ L'architecture repose sur une collecte de données orchestrée avec **Apache Air
 6. **Exposition des résultats via une API REST**.
 7. **Affichage des tendances et recommandations sur le dashboard Streamlit**.
 
+---
+
 ## 🛠️ Technologies Utilisées
 - **Orchestration** : Apache Airflow
 - **Stockage** : Google Cloud Storage (GCS)
@@ -40,10 +42,10 @@ L'architecture repose sur une collecte de données orchestrée avec **Apache Air
 - **Interface utilisateur** : Streamlit
 - **Déploiement** : Docker, Cloud Run, GitHub Actions
 
+---
+
 ## 🌐 Déploiement & Exécution
-### TrendFlow
-#### Setup
-#### Terraform
+### Terraform
 ```
 cd terraform/
 terraform init

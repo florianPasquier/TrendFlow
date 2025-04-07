@@ -10,18 +10,28 @@ from datetime import datetime as dt
 import pandas as pd
 import logging
 
-# GCS path
-BUCKET_ID = "trendflow-455409-trendflow-bucket"
-GCS_SALES_PATH = "Amazon_Sales_Final.csv"
-
+# CONFIG 
 # BigQuery table
 PROJECT_ID = "trendflow-455409"
 DATASET_ID = "trendflow"
-STAGING_TABLE = "amazon_sales_staging"
+STAGING_TABLE = "ebay_sales_staging"
 FINAL_TABLE = "sales_history"
 
-# temporary path
-LOCAL_FINAL_PATH = "/tmp/sales.csv"
+# GCS path
+BUCKET_ID = "trendflow-455409-trendflow-bucket"
+GCS_SALES_PATH = "ebay_final_sales.csv"
+
+# Local path
+LOCAL_TMP_RAW_PATH = "/tmp/ebay_sales.xlsx"
+LOCAL_FINAL_PATH = "/tmp/ebay_final_sales.csv"
+
+default_args = {
+    "owner": "Yongjing",
+    "email": ["yongjing.chen@gmail.com"],
+    "email_on_failure": True,
+    "email_on_retry": False,
+    "retries": 1,
+}
 
 default_args = {
     "owner": "Yongjing",
@@ -29,62 +39,95 @@ default_args = {
     "email": ["yongjing.chen@gmail.com"],
 }
 
-def ingest_and_merge(**kwargs):
-    df_sales = pd.read_csv(f"gs://{BUCKET_ID}/Amazon Sale Report.csv")
-    df_mapping = pd.read_csv(f"gs://{BUCKET_ID}/asin_to_product_mapping.csv")
+def download_from_gcs(bucket_name, source_blob_name, destination_file_name):
+    from google.cloud import storage
+    client = storage.Client()
+    bucket = client.bucket(bucket_name)
+    blob = bucket.blob(source_blob_name)
+    blob.download_to_filename(destination_file_name)
 
-    df_sales.rename(columns={
-        "Sales Channel ": "Sales_Channel",
-        "Sales Channel": "Sales_Channel",
-        "Date": "Date",
-        "ASIN": "ASIN",
-        "Qty": "Qty",
-        "Category": "Category",
-        "Amount": "price",
-    }, inplace=True)
+def ingest_xlsx():
+    download_from_gcs(BUCKET_ID, "eBay-OrdersReport.xlsx", LOCAL_TMP_RAW_PATH)
+    logging.info("✅ Downloaded Excel file")
+    return LOCAL_TMP_RAW_PATH
 
-    expected = ["Date", "ASIN", "Qty", "Sales_Channel", "Category", "price"]
-    df_sales = df_sales[expected]
-    df = df_sales.merge(df_mapping, on="ASIN", how="right")
+def validate(ti):
+    import os
+    path = ti.xcom_pull(task_ids="ingest_xlsx", key="return_value")
+    if not os.path.exists(path):
+        logging.error(f"❌ File not found: {path}")
+    elif os.path.getsize(path) == 0:
+        logging.error(f"❌ File is empty: {path}")
+    return os.path.exists(path) and os.path.getsize(path) > 0
 
-    df.rename(columns={
-        "Date": "sale_date",
-        "ASIN": "product_id",
-        "ProductName": "product_name",
-        "Qty": "quantity_sold",
-        "price": "sale_price",
-        "Category": "category",
-        "Sales_Channel": "region",
-    }, inplace=True)
+def clean_data():
+    ebay_df = pd.read_excel(LOCAL_TMP_RAW_PATH)
+    print("🧼 Normalizing column names...")
+    
+    # Check existence of required column before renaming
+    if "Sold for" not in ebay_df.columns:
+        raise ValueError("❌ Column 'Sold for' not found in the DataFrame")
+    # Rename columns to match BigQuery schema
+    ebay_df.rename(columns={
+        "Sale date": "sale_date",
+        "Item number": "product_id",
+        "Item title": "product_name",
+        "Quantity": "quantity_sold",
+        "Sold for": "sale_price"
+        }, inplace=True)
 
-    df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce").dt.date
-    df["quantity_sold"] = pd.to_numeric(df["quantity_sold"], errors="coerce")
-    df["sale_price"] = pd.to_numeric(df["sale_price"], errors="coerce")
-    df["category_id"] = "unknown"
-    df["discount"] = 0.0
-    df["inventory_level"] = 100
-    df = df.dropna(subset=["product_id", "sale_date"])
+    print("🔁 Converting data types...")
 
-    df = df[[
+    # Convert sale_date to datetime
+    ebay_df["sale_date"] = pd.to_datetime(ebay_df["sale_date"], errors="coerce").dt.date
+
+    # Ensure product_id is a clean string
+    ebay_df["product_id"] = ebay_df["product_id"].astype(str).str.strip()
+    ebay_df = ebay_df[ebay_df["product_id"].notna() & (ebay_df["product_id"] != "")]
+
+    # Clean and convert sale_price: remove currency symbols like £/$/€ and convert to float
+    ebay_df["sale_price"] = ebay_df["sale_price"].astype(str).str.replace(r"[^\d\.]", "", regex=True)
+    ebay_df["sale_price"] = pd.to_numeric(ebay_df["sale_price"], errors="coerce")
+
+    # Convert quantity_sold to integer
+    ebay_df["quantity_sold"] = pd.to_numeric(ebay_df["quantity_sold"], errors="coerce").fillna(0).astype(int)
+
+    # Fill in default values for BigQuery compatibility
+    ebay_df["region"] = "United Kingdom"
+    ebay_df["currency"] = "GBP"
+    ebay_df["category"] = "High-tech Electronics"
+    ebay_df["category_id"] = "unknown"
+    ebay_df["discount"] = 0
+    ebay_df["inventory_level"] = 100
+
+    # Reorder and keep only expected columns
+    expected_columns = [
         "sale_date", "product_id", "quantity_sold", "region", "category",
         "sale_price", "product_name", "category_id", "discount", "inventory_level"
-    ]].drop_duplicates(subset=["sale_date", "product_id"])
+    ]
+    ebay_df = ebay_df[expected_columns]
 
-    df.to_csv(LOCAL_FINAL_PATH, index=False)
-    logging.info("✅ Final sales CSV written to /tmp/sales.csv")
+    # Remove duplicates based on (sale_date + product_id)
+    ebay_df.drop_duplicates(subset=["sale_date", "product_id"], inplace=True)        
+    ebay_df.to_csv(LOCAL_FINAL_PATH, index=False)
     return LOCAL_FINAL_PATH
 
-with DAG("load_amazon_sales_from_gcs_to_bq",
-         default_args=default_args,
-         schedule_interval="0 */5 * * *",
-         start_date=dt(2025, 3, 23),
-         catchup=False,
-         ) as dag:
+def choose_branch(ti):
+    return "clean_data" if ti.xcom_pull(task_ids="validate") else "send_alert"
 
-    clean_merge = PythonOperator(
-        task_id="clean_and_merge",
-        python_callable=ingest_and_merge,
-    )
+with DAG(
+    "load_ebay_uk_sales_from_gcs_to_bq",
+    default_args=default_args,
+    schedule_interval="0 */5 * * *",
+    start_date=dt(2025, 4, 3),
+    catchup=False,
+) as dag:
+    
+    ingest_xlsx_task = PythonOperator(task_id="ingest_xlsx", python_callable=ingest_xlsx)
+    validate_task = PythonOperator(task_id="validate", python_callable=validate)
+    branch_task = BranchPythonOperator(task_id="branch", python_callable=choose_branch)
+    clean_data_task = PythonOperator(task_id="clean_data", python_callable=clean_data)
+    send_alert_task = EmptyOperator(task_id="send_alert")
 
     upload_to_gcs = LocalFilesystemToGCSOperator(
         task_id="upload_to_gcs",
@@ -153,15 +196,17 @@ with DAG("load_amazon_sales_from_gcs_to_bq",
         gcp_conn_id="bq-admin"
     )
 
-    alert = EmailOperator(
+    send_alert = EmailOperator(
         task_id="email_alert_on_failure",
         to="yongjing.chen@gmail.com",
         subject="[Airflow Failure] Amazon DAG Failed",
         html_content="The DAG <b>load_amazon_sales_from_gcs_to_bq</b> has failed. Please check Airflow logs.",
         trigger_rule="one_failed",
+        conn_id="smtp_default",
     )
 
     final = EmptyOperator(task_id="pipeline_done")
 
-    clean_merge >> upload_to_gcs >> load_to_staging >> merge_into_main >> final
-    [clean_merge, upload_to_gcs, load_to_staging, merge_into_main] >> alert
+    ingest_xlsx_task >> validate_task >> branch_task
+    branch_task >> [clean_data_task, send_alert_task]
+    clean_data_task >> upload_to_gcs >> load_to_staging >> merge_into_main
