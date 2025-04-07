@@ -24,8 +24,13 @@ GCS_SALES_PATH = "Pakistan_final_sales.csv"
 LOCAL_TMP_RAW_PATH = "/tmp/pakistan_sales.xlsx"
 LOCAL_FINAL_PATH = "/tmp/Pakistan_final_sales.csv"
 
-default_args = {"owner": "Yongjing"}
-
+default_args = {
+    "owner": "Yongjing",
+    "email": ["yongjing.chen@gmail.com"],
+    "email_on_failure": True,
+    "email_on_retry": False,
+    "retries": 1,
+}
 def ensure_staging_table():
     from google.cloud import bigquery
     import logging
@@ -94,7 +99,6 @@ def clean_data():
     df["currency"] = "PKR"
     df["category_id"] = "unknown"
     df["inventory_level"] = 100
-    df = df.dropna(subset=["product_id"])
     expected_columns = [
         "sale_date", "product_id", "quantity_sold", "region", "category",
         "sale_price", "product_name", "category_id", "discount", "inventory_level"
