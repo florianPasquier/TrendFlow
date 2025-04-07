@@ -54,7 +54,7 @@ terraform apply -var-file="terraform.tfvars"
 ```
 mkdir -p ./dags ./logs ./plugins ./config
 echo -e "AIRFLOW_UID=$(id -u)" > .env
-docker compose up -- build   
+docker compose up --build   
 ```
 ### 1. **Installation des dépendances**
 ```bash
