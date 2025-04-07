@@ -1,8 +1,6 @@
 from datetime import datetime
 from airflow import DAG
-from airflow.operators.python import PythonOperator, BranchPythonOperator
-from airflow.operators.empty import EmptyOperator
-from airflow.exceptions import AirflowException
+from airflow.operators.python import PythonOperator
 from airflow.providers.google.cloud.transfers.local_to_gcs import (
     LocalFilesystemToGCSOperator,
 )
@@ -45,7 +43,44 @@ def ingest_xtrends(**context):
             response[dif] = temp
     with open("/tmp/x_trends.json", "w", encoding="utf-8") as f:
         json.dump(response, f, indent=2, ensure_ascii=False)
+
+    # push the path to the xcom
+    context["task_instance"].xcom_push(key="path", value="/tmp/x_trends.json")
+
     return "/tmp/x_trends.json"
+
+
+def convert_to_csv(**context):
+    import json
+    import pandas as pd
+    from datetime import datetime, timedelta
+
+    path = context["task_instance"].xcom_pull(task_ids="xtrends", key="path")
+
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+    # Flatten the JSON data
+    rows = []
+    # Define the format for the timestamp
+    frm = "%Y-%m-%d-%H:%M:%S"
+    # Iterate over the data and create a row for each trend
+    for currentness, trends in data.items():
+        for trend in trends["trend"]:
+            rows.append(
+                {
+                    "currentness": (
+                        datetime.now() - timedelta(hours=int(currentness))
+                    ).strftime(frm),
+                    "name": trend["name"],
+                    "count": trend["count"],
+                }
+            )
+    df = pd.DataFrame(rows)
+    df["source"] = "x_trends"
+    df["categories"] = ""
+    df["associated_entities"] = ""
+    df.to_csv("/tmp/x_trends.csv", index=False, encoding="utf-8", sep=";")
+    return "/tmp/x_trends.csv"
 
 
 with DAG(
@@ -55,23 +90,26 @@ with DAG(
         "retries": 2,
         "email_on_failure": False,
         "start_date": datetime(2025, 4, 2),
+        "owner": "Trendflow",
     },
     catchup=False,
     schedule_interval="@daily",
 ) as dag:
 
     xtrends_task = PythonOperator(
-        task_id="xtrends",
-        python_callable=ingest_xtrends,
-        dag=dag
+        task_id="xtrends", python_callable=ingest_xtrends, dag=dag
+    )
+
+    convert_to_csv_task = PythonOperator(
+        task_id="convert_to_csv", python_callable=convert_to_csv, dag=dag
     )
 
     upload_to_gcs_task = LocalFilesystemToGCSOperator(
         task_id="upload_to_gcs",
-        src="/tmp/x_trends.json",
-        dst="x_trends.json",
+        src="/tmp/x_trends.csv",
+        dst="x_trends.csv",
         bucket="trendflow-455409-trendflow-bucket",
         gcp_conn_id="gcp_airflow",
     )
 
-    xtrends_task >> upload_to_gcs_task
+    xtrends_task >> convert_to_csv_task >> upload_to_gcs_task
