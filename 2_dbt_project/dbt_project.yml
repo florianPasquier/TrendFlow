@@ -1,0 +1,108 @@
+# Explication des sections :
+# name et version : Définissent le nom et la version du projet DBT.
+# profile : Spécifie le profil de connexion à utiliser. Ici, le profil est configuré pour BigQuery.
+# source-paths et model-paths : Spécifient les répertoires dans lesquels se trouvent les modèles et sources DBT.
+# staging : Définit les tables staging pour les données sources (par exemple, historique des ventes, données de tendance, nouveaux produits).
+# models : La configuration pour les modèles (tables de production), ici elles sont toutes matérialisées en tant que tables.
+# profile: bigquery_profile : Configure la connexion à BigQuery pour l'accès aux données.
+# tests : Vous pouvez ajouter des tests pour valider certaines conditions sur vos données.
+# on-run-start et on-run-end : Définissent des actions à effectuer avant et après l'exécution des modèles DBT.
+
+# Remarque :
+# Dataset et projet Google Cloud : Vous devez remplacer 'your_project_id' et 'your_dataset_name' par les informations appropriées pour votre projet Google Cloud et votre dataset BigQuery.
+# Seeding, Tests, et Hooks : Vous pouvez personnaliser davantage en ajoutant des tests, des seeds ou des hooks pour exécuter des scripts avant et après chaque exécution.
+
+
+name: 'product_trend_prediction'
+version: '1.0'
+config-version: 2
+
+profile: 'bigquery_profile'
+
+# Defining the configurations for the sources
+source-paths:
+  - "models/staging"
+
+# Defining the paths for your models
+model-paths:
+  - "models"
+
+# Defining the seeds for your project (if any)
+seeds:
+  product_trend_prediction:
+    # Example: defining how to store the data seeds
+    file1:
+      description: 'Seeds for historical sales data'
+      file: 'seeds/historical_sales.csv'
+
+# Defining the macros for your project (if any)
+macro-paths:
+  - "macros"
+
+# Configuration for the staging tables (pre-processed data)
+staging:
+  materializations:
+    - table
+  pre-hook:
+    - "some_pre_hook"
+  post-hook:
+    - "some_post_hook"
+
+# Configuration for the production models
+models:
+  product_trend_prediction:
+    staging:
+      materialized: table
+    sales_history:
+      materialized: table
+      schema: 'staging'
+    trend_data:
+      materialized: table
+      schema: 'staging'
+    new_products:
+      materialized: table
+      schema: 'staging'
+
+# Data Warehouse or Database configurations
+target:
+  type: bigquery
+  threads: 4
+  timeout: 300
+
+# Connection to BigQuery
+profile: 
+  bigquery_profile:
+    type: bigquery
+    method: oauth
+    project: 'your_project_id'  # Replace with your Google Cloud project ID
+    dataset: 'your_dataset_name'  # Replace with your BigQuery dataset name
+    threads: 4
+    timeout: 300
+
+# Configure your test suite (if any)
+tests:
+  test_one:
+    description: 'Test to validate the sales data'
+    file: 'tests/sales_test.sql'
+
+# Additional configurations
+models:
+  product_trend_prediction:
+    sales_history:
+      description: 'Sales data from historical sales'
+      tags:
+        - 'sales'
+    trend_data:
+      description: 'Data from trend platforms like Google Trends or TikTok'
+      tags:
+        - 'trend'
+    new_products:
+      description: 'Newly launched products'
+      tags:
+        - 'new_product'
+
+# Example of dbt hooks to execute before and after models
+on-run-start:
+  - "echo Starting the dbt run!"
+on-run-end:
+  - "echo Finished dbt run!"

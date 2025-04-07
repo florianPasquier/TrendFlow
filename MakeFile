@@ -1,0 +1,61 @@
+# Makefile for Python project
+#DEFAULT pass
+default : pylint test
+
+.PHONY : pylint
+pylint :
+	@find . -iname "*.py" -not -path "./test*" | xargs -n1 -I {}  pylint --output-format=colorized --max-line-length=120 --disable=C0114 --disable=C0103 {}; true
+
+
+black :
+	black .
+
+test-all :
+	find -s . -type d -iname "test*"  -exec sh -c 'echo {} && cd $$(exec dirname {}) && pytest -q' \;
+
+.PHONY : test
+test :
+	PYTHONDONTWRITEBYTECODE=1  pytest -v --color=yes
+
+
+
+
+create_venv :
+# python3 -m venv venv
+	if pyenv virtualens | grep -q 3.10.2; then \
+		python3 -m venv venv; fi
+	else \
+		pyenv local 3.10.2; \
+
+activate_venv :
+	. venv/bin/activate
+
+install :
+	create_venv_2
+	activate_venv_2
+	install_requirement
+
+install_requirement :
+	pip install -r requirements.txt
+
+	pip install apache-airflow
+	export AIRFLOW_HOME=$(pwd)/airflow
+	airflow db init
+	airflow scheduler &
+	airflow webserver --port 8080
+	
+	cd dbt_project
+	dbt init .
+	
+	pyspark
+
+
+ruff :
+	ruff check --fix
+	ruff format
+	ruff check
+
+
+generatedocs :
+	mkdocs new .
+	mkdocs serve
