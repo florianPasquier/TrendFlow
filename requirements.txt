@@ -2,3 +2,6 @@ pandas
 gcsfs
 google-cloud-bigquery
 openpyxl
+apache-airflow
+pyspark
+dbt-core
