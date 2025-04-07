@@ -1,76 +1,38 @@
 from airflow import DAG
-import logging
-import requests
-
 from airflow.operators.empty import EmptyOperator
-from airflow.operators.email import EmailOperator
 from airflow.operators.python import PythonOperator, BranchPythonOperator
+from airflow.operators.email import EmailOperator
 from airflow.providers.google.cloud.transfers.local_to_gcs import LocalFilesystemToGCSOperator
 from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQueryOperator
+from airflow.providers.google.cloud.operators.bigquery import BigQueryInsertJobOperator
 
 from datetime import datetime as dt
+import pandas as pd
+import logging
 
-# GCS CSV file path
-GCS_SALES_PATH = "gs://trendflow-455409-trendflow-bucket/Amazon Sale Report.csv"
-GCS_ASIN_PRODUCT_MAPPING_PATH = "gs://trendflow-455409-trendflow-bucket/asin_to_product_mapping.csv"
+# GCS 路径
+BUCKET_ID = "trendflow-455409-trendflow-bucket"
+GCS_SALES_PATH = "Amazon_Sales_Final.csv"
 
-# BigQuery settings
+# BigQuery 表
 PROJECT_ID = "trendflow-455409"
 DATASET_ID = "trendflow"
-TABLE_ID = "sales"
+STAGING_TABLE = "amazon_sales_staging"
+FINAL_TABLE = "sales_history"
 
-# BUCKET 
-BUCKET_ID = "trendflow-455409-trendflow-bucket"
+# 临时路径
+LOCAL_FINAL_PATH = "/tmp/sales.csv"
 
-def ingest_sales_csv():
-    """
-    Load a sales CSV
-    """
-    import pandas as pd
-    logger = logging.getLogger(__name__)
-    df_sales = pd.read_csv(GCS_SALES_PATH)
-    logger.log(1,msg="Sales CSV loaded")
-    df_sales.to_csv("/tmp/Amazon Sale Report.csv",index=False)
-    return  "/tmp/Amazon Sale Report.csv"
+default_args = {
+    "owner": "Yongjing",
+    "email_on_failure": True,
+    "email": ["yongjing.chen@gmail.com"],
+}
 
-def ingest_mapping_csv():
-    """
-    Load a asin_to_product_mapping CSV
-    """
-    import pandas as pd
-    logger = logging.getLogger(__name__)
-    df_mapping = pd.read_csv(GCS_ASIN_PRODUCT_MAPPING_PATH)
-    logger.log(1,msg="asin_to_product_mapping CSV loaded")
-    df_mapping.to_csv("/tmp/asin_to_product_mapping.csv",index=False)
-    return  "/tmp/asin_to_product_mapping.csv"
+def ingest_and_merge(**kwargs):
+    df_sales = pd.read_csv(f"gs://{BUCKET_ID}/Amazon Sale Report.csv")
+    df_mapping = pd.read_csv(f"gs://{BUCKET_ID}/asin_to_product_mapping.csv")
 
-def validate(ti): 
-    import pandas as pd
-    sales_csv_path = ti.xcom_pull(task_ids="ingest_sales_csv", key = "return_value")
-    df_sales = pd.read_csv(sales_csv_path)
-    print(df_sales.info())
-    print(df_sales.head())
-    mapping_csv_path = ti.xcom_pull(task_ids="ingest_mapping_csv", key = "return_value")
-    df_mapping = pd.read_csv(mapping_csv_path)
-    print(df_mapping.info())
-    print(df_mapping.head())
-    return True
-    
-def choose_next(**kwargs):
-    ti = kwargs["ti"]
-    print("Doesn't exist", ti.xcom_pull(task_ids='truc', key="return_value") )
-    if ti.xcom_pull(task_ids='validate', key="return_value") :
-        return 'merge_data'
-    return 'send_alert'
-
-def merge(**kwargs): 
-    ti = kwargs["ti"]
-    import pandas as pd 
-    df_sales =   pd.read_csv("/tmp/Amazon Sale Report.csv")      
-    df_mapping = pd.read_csv("/tmp/asin_to_product_mapping.csv") 
-    
-    print("🧼 Normalizing column names...")
-    # Rename columns to match BigQuery schema (replace spaces with underscores)
     df_sales.rename(columns={
         "Sales Channel ": "Sales_Channel",
         "Sales Channel": "Sales_Channel",
@@ -80,14 +42,12 @@ def merge(**kwargs):
         "Category": "Category",
         "Amount": "price",
     }, inplace=True)
-    
-    # Filter only expected columns
-    expected_columns = ["Date", "ASIN", "Qty", "Sales_Channel", "Category", "price"]
-    selected_df = df_sales[expected_columns]
-    merged_df = selected_df.merge(df_mapping, on="ASIN", how="right")    
-    
-    # Rename ASIN to product_id
-    merged_df.rename(columns={
+
+    expected = ["Date", "ASIN", "Qty", "Sales_Channel", "Category", "price"]
+    df_sales = df_sales[expected]
+    df = df_sales.merge(df_mapping, on="ASIN", how="right")
+
+    df.rename(columns={
         "Date": "sale_date",
         "ASIN": "product_id",
         "ProductName": "product_name",
@@ -96,52 +56,112 @@ def merge(**kwargs):
         "Category": "category",
         "Sales_Channel": "region",
     }, inplace=True)
-    
-    print("🔁 Converting data types...")
-    # Convert types to match BigQuery schema
-    merged_df["sale_date"] = pd.to_datetime(merged_df["sale_date"], errors="coerce").dt.date
-    merged_df["quantity_sold"] = pd.to_numeric(merged_df["quantity_sold"], errors="coerce")
-    merged_df["sale_price"] = pd.to_numeric(merged_df["sale_price"], errors="coerce")
-    merged_df["category_id"] = "unknown"
-    merged_df["discount"] = 0.0
-    merged_df["inventory_level"] = 100
 
-    merged_df.to_csv("/tmp/sales.csv",index=False)
-    return True     
-     
-    
+    df["sale_date"] = pd.to_datetime(df["sale_date"], errors="coerce").dt.date
+    df["quantity_sold"] = pd.to_numeric(df["quantity_sold"], errors="coerce")
+    df["sale_price"] = pd.to_numeric(df["sale_price"], errors="coerce")
+    df["category_id"] = "unknown"
+    df["discount"] = 0.0
+    df["inventory_level"] = 100
+    df = df.dropna(subset=["product_id", "sale_date"])
+
+    df = df[[
+        "sale_date", "product_id", "quantity_sold", "region", "category",
+        "sale_price", "product_name", "category_id", "discount", "inventory_level"
+    ]].drop_duplicates(subset=["sale_date", "product_id"])
+
+    df.to_csv(LOCAL_FINAL_PATH, index=False)
+    logging.info("✅ Final sales CSV written to /tmp/sales.csv")
+    return LOCAL_FINAL_PATH
+
 with DAG("load_amazon_sales_from_gcs_to_bq",
-         default_args = {"owner":"Yongjing"},
+         default_args=default_args,
          schedule_interval="0 */5 * * *",
-         start_date=dt(2025,3,23)
-         ):
-    
-    ingest_csv_task = PythonOperator(task_id="ingest_sales_csv",python_callable=ingest_sales_csv)
-    ingest_mapping_csv_task = PythonOperator(task_id="ingest_mapping_csv",python_callable=ingest_mapping_csv)
-    validate_task   = PythonOperator(task_id="validate"  ,python_callable=validate)
-    
-    branch_task = BranchPythonOperator(task_id="branch",python_callable=choose_next)
-    
-    merge_data_task = PythonOperator(task_id="merge_data",python_callable=merge)
-    load_data_task = LocalFilesystemToGCSOperator(task_id="load_data",
-                                                  src="/tmp/sales.csv",
-                                                  dst="final_sales.csv",
-                                                  bucket=BUCKET_ID,
-                                                  gcp_conn_id="bq-admin"
-                                                  )
-    load_bq_task = GCSToBigQueryOperator(task_id="load_bq",
-                                        bucket=BUCKET_ID,
-                                        source_objects=["final_sales.csv"],
-                                        destination_project_dataset_table="trendflow.sales_history",
-                                        write_disposition="WRITE_TRUNCATE",
-                                        gcp_conn_id="bq-admin"                                        
+         start_date=dt(2025, 3, 23),
+         catchup=False,
+         ) as dag:
+
+    clean_merge = PythonOperator(
+        task_id="clean_and_merge",
+        python_callable=ingest_and_merge,
     )
 
-    
-    send_alert = EmptyOperator(task_id="send_alert")
-    
-    
-    [ingest_csv_task, ingest_mapping_csv_task] >> validate_task >> branch_task
-    branch_task >> [merge_data_task, send_alert]
-    
-    merge_data_task >> load_data_task >> load_bq_task
+    upload_to_gcs = LocalFilesystemToGCSOperator(
+        task_id="upload_to_gcs",
+        src=LOCAL_FINAL_PATH,
+        dst=GCS_SALES_PATH,
+        bucket=BUCKET_ID,
+        gcp_conn_id="bq-admin",
+    )
+
+    load_to_staging = GCSToBigQueryOperator(
+        task_id="load_to_staging",
+        bucket=BUCKET_ID,
+        source_objects=[GCS_SALES_PATH],
+        destination_project_dataset_table=f"{PROJECT_ID}.{DATASET_ID}.{STAGING_TABLE}",
+        write_disposition="WRITE_TRUNCATE",
+        skip_leading_rows=1,
+        source_format="CSV",
+        schema_fields=[
+            {"name": "sale_date", "type": "DATE", "mode": "NULLABLE"},
+            {"name": "product_id", "type": "STRING", "mode": "REQUIRED"},
+            {"name": "quantity_sold", "type": "INTEGER", "mode": "NULLABLE"},
+            {"name": "region", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "category", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "sale_price", "type": "FLOAT", "mode": "NULLABLE"},
+            {"name": "product_name", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "category_id", "type": "STRING", "mode": "NULLABLE"},
+            {"name": "discount", "type": "FLOAT", "mode": "NULLABLE"},
+            {"name": "inventory_level", "type": "INTEGER", "mode": "NULLABLE"},
+        ],
+        gcp_conn_id="bq-admin"
+    )
+
+    merge_into_main = BigQueryInsertJobOperator(
+        task_id="merge_into_main",
+        configuration={
+            "query": {
+                "query": f"""
+                    MERGE `{PROJECT_ID}.{DATASET_ID}.{FINAL_TABLE}` T
+                    USING `{PROJECT_ID}.{DATASET_ID}.{STAGING_TABLE}` S
+                    ON T.sale_date = S.sale_date AND T.product_id = S.product_id
+                    WHEN MATCHED THEN
+                      UPDATE SET
+                        quantity_sold = S.quantity_sold,
+                        region = S.region,
+                        category = S.category,
+                        sale_price = S.sale_price,
+                        product_name = S.product_name,
+                        category_id = S.category_id,
+                        discount = S.discount,
+                        inventory_level = S.inventory_level
+                    WHEN NOT MATCHED THEN
+                      INSERT (
+                        sale_date, product_id, quantity_sold, region,
+                        category, sale_price, product_name, category_id,
+                        discount, inventory_level
+                      )
+                      VALUES (
+                        S.sale_date, S.product_id, S.quantity_sold, S.region,
+                        S.category, S.sale_price, S.product_name, S.category_id,
+                        S.discount, S.inventory_level
+                      )
+                """,
+                "useLegacySql": False,
+            }
+        },
+        gcp_conn_id="bq-admin"
+    )
+
+    alert = EmailOperator(
+        task_id="email_alert_on_failure",
+        to="yongjing.chen@gmail.com",
+        subject="[Airflow Failure] Amazon DAG Failed",
+        html_content="The DAG <b>load_amazon_sales_from_gcs_to_bq</b> has failed. Please check Airflow logs.",
+        trigger_rule="one_failed",
+    )
+
+    final = EmptyOperator(task_id="pipeline_done")
+
+    clean_merge >> upload_to_gcs >> load_to_staging >> merge_into_main >> final
+    [clean_merge, upload_to_gcs, load_to_staging, merge_into_main] >> alert
