@@ -11,6 +11,18 @@ from airflow.providers.google.cloud.transfers.gcs_to_bigquery import GCSToBigQue
 
 from datetime import datetime as dt
 
+#   ingest_xlsx_task
+#        ↓
+#   validate_task
+#        ↓
+#     branch_task
+#       ↙      ↘
+#clean_data    send_alert
+#      ↓
+#load_data_task
+#      ↓
+#load_bq_task
+
 # GCS CSV file path
 GCS_SALES_PATH = "gs://trendflow-455409-trendflow-bucket/Pakistan Largest Ecommerce Dataset.xlsx"
 
@@ -40,16 +52,20 @@ def ingest_pakistan_sales_xlsx():
     download_from_gcs("trendflow-455409-trendflow-bucket", "Pakistan Largest Ecommerce Dataset.xlsx", LOCAL_TMP_RAW_PATH)   
     df_sales = pd.read_excel(LOCAL_TMP_RAW_PATH)
     logger.info("✅ Sales excel file loaded")
-    df_sales.to_excel(LOCAL_TMP_RAW_PATH, index=False)
+    #df_sales.to_excel(LOCAL_TMP_RAW_PATH, index=False)
     return LOCAL_TMP_RAW_PATH
 
-def validate(ti): 
-    import pandas as pd
-    sales_xlsx_path = ti.xcom_pull(task_ids="ingest_pakistan_sales_xlsx", key = "return_value")
-    df_sales = pd.read_excel(sales_xlsx_path)
-    print(df_sales.info())
-    print(df_sales.head())
-    return True
+def validate(ti):
+    import os
+
+    sales_xlsx_path = ti.xcom_pull(task_ids="ingest_pakistan_sales_xlsx", key="return_value")
+    
+    if sales_xlsx_path and os.path.exists(sales_xlsx_path) and os.path.getsize(sales_xlsx_path) > 0:
+        print(f"✅ File exists and is not empty: {sales_xlsx_path}")
+        return True
+    else:
+        print(f"❌ File missing or empty: {sales_xlsx_path}")
+        return False
 
 def clean_data(**kwargs):
     ti = kwargs["ti"]
@@ -66,8 +82,7 @@ def clean_data(**kwargs):
     }, inplace=True)
     print("🔁 Converting data types...")
     pakistan_df["product_id"] = pd.to_numeric(pakistan_df["product_id"], errors="coerce").fillna(0).astype(int).astype(str).replace("0", "")
-    pakistan_df["quantity_sold"] = pd.to_numeric(pakistan_df["quantity_sold"], errors="coerce").fillna(0).astype(int).astype(str).replace("0", "")
-    # Convert types to match BigQuery schema
+    pakistan_df["quantity_sold"] = pd.to_numeric(pakistan_df["quantity_sold"], errors="coerce").fillna(0).astype(int)    # Convert types to match BigQuery schema
     pakistan_df["sale_date"] = pd.to_datetime(pakistan_df["sale_date"], errors="coerce").dt.date
     pakistan_df["sale_price"] = pd.to_numeric(pakistan_df["sale_price"], errors="coerce")
     pakistan_df["region"] = "Pakistan"
@@ -87,7 +102,7 @@ def choose_next(**kwargs):
     ti = kwargs["ti"]
     print("Doesn't exist", ti.xcom_pull(task_ids='truc', key="return_value") )
     if ti.xcom_pull(task_ids='validate', key="return_value") :
-        return 'merge_data'
+        return 'clean_data'
     return 'send_alert'
     
 with DAG("load_pakistan_sales_from_gcs_to_bq",
@@ -108,15 +123,29 @@ with DAG("load_pakistan_sales_from_gcs_to_bq",
                                                   bucket=BUCKET_ID,
                                                   gcp_conn_id="bq-admin"
                                                   )
+
     load_bq_task = GCSToBigQueryOperator(task_id="load_bq",
-                                        bucket=BUCKET_ID,
-                                        source_objects=["Pakistan_final_sales.csv"],
-                                        source_format="CSV", 
-                                        skip_leading_rows=1,
-                                        destination_project_dataset_table="trendflow.sales_history",
-                                        write_disposition="WRITE_APPEND",
-                                        gcp_conn_id="bq-admin"                                        
-    )
+                                         bucket=BUCKET_ID,
+                                         source_objects=["Pakistan_final_sales.csv"],
+                                         source_format="CSV", 
+                                         skip_leading_rows=1,
+                                         destination_project_dataset_table=f"{PROJECT_ID}.{DATASET_ID}.{TABLE_ID}",
+                                         write_disposition="WRITE_APPEND",
+                                         gcp_conn_id="bq-admin",
+                                         autodetect=False,
+                                         schema_fields=[
+                                             {"name": "sale_date", "type": "DATE", "mode": "NULLABLE"},
+                                             {"name": "product_id", "type": "STRING", "mode": "REQUIRED"},
+                                             {'name': 'quantity_sold', 'type': 'INTEGER', 'mode': 'NULLABLE'},
+                                             {"name": "region", "type": "STRING", "mode": "NULLABLE"},
+                                             {"name": "category", "type": "STRING", "mode": "NULLABLE"},
+                                             {"name": "sale_price", "type": "FLOAT", "mode": "NULLABLE"},
+                                             {"name": "product_name", "type": "STRING", "mode": "NULLABLE"},
+                                             {"name": "category_id", "type": "STRING", "mode": "NULLABLE"},
+                                             {"name": "discount", "type": "FLOAT", "mode": "NULLABLE"},
+                                             {"name": "inventory_level", "type": "INTEGER", "mode": "NULLABLE"},
+                                             ]
+                                         )
 
     
     send_alert = EmptyOperator(task_id="send_alert")
