@@ -45,6 +45,19 @@ L'architecture repose sur une collecte de données orchestrée avec **Apache Air
 ---
 
 ## 🌐 Déploiement & Exécution
+### Terraform
+```
+cd terraform/
+terraform init
+terraform plan -var-file="terraform.tfvars"
+terraform apply -var-file="terraform.tfvars"
+```
+### Docker (local config if need)
+```
+mkdir -p ./dags ./logs ./plugins ./config
+echo -e "AIRFLOW_UID=$(id -u)" > .env
+docker compose up --build   
+```
 ### 1. **Installation des dépendances**
 ```bash
 pip install -r requirements.txt
@@ -71,4 +84,3 @@ streamlit run frontend/app.py
 Ce projet fournit une solution complète et automatisée pour l'analyse des tendances et la prédiction des produits prometteurs dans l'e-commerce. Il est conçu pour être scalable, flexible et intégrable avec d'autres outils d'analyse de marché.
 
 🚀 **Prêt à être mis en production !**
-
