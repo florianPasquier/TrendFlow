@@ -9,7 +9,7 @@ resource "google_bigquery_dataset" "trendflow_dataset" {
 # create Table
 resource "google_bigquery_table" "ecommerce_sales_table" {
   dataset_id = google_bigquery_dataset.trendflow_dataset.dataset_id
-  table_id   = "sales"
+  table_id   = "sales_history"
 
   schema = jsonencode([
     {
@@ -19,6 +19,11 @@ resource "google_bigquery_table" "ecommerce_sales_table" {
     },
     {
       name = "ASIN"
+      type = "STRING"
+      mode = "REQUIRED"
+    },
+    {
+      name = "Product_Name"
       type = "STRING"
       mode = "REQUIRED"
     },
