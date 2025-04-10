@@ -106,7 +106,7 @@ docker compose up --build
 ```
 ### 1. **Installation des dépendances**
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt --constraint https://raw.githubusercontent.com/apache/airflow/constraints-2.10.1/constraints-3.10.txt
 ```
 
 ### 2. **Exécution des pipelines Airflow**
