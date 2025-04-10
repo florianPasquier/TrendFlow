@@ -2,7 +2,7 @@ from airflow import DAG
 from airflow.operators.bash import BashOperator
 from datetime import datetime
 
-dag = DAG("dbt_transformation", schedule_interval="@daily", start_date=datetime(2024, 4, 1))
+dag = DAG("dbt_transformation", schedule_interval="@daily", start_date=datetime(2025, 4, 1))
 
 run_dbt = BashOperator(
     task_id="run_dbt",

@@ -173,6 +173,10 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+
+# VS Code settings
+.envrc
 **/.terraform/*
 *.tfstate
 *.tfstate.backup

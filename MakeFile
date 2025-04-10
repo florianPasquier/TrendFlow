@@ -21,7 +21,6 @@ test :
 
 
 create_venv :
-# python3 -m venv venv
 	if pyenv virtualens | grep -q 3.10.2; then \
 		python3 -m venv venv; fi
 	else \
@@ -30,14 +29,15 @@ create_venv :
 activate_venv :
 	. venv/bin/activate
 
-install :
-	create_venv_2
-	activate_venv_2
-	install_requirement
-
 install_requirement :
 	pip install -r requirements.txt
 
+install :
+	create_venv
+	activate_venv
+	install_requirement
+
+install_airflow :
 	pip install apache-airflow
 	export AIRFLOW_HOME=$(pwd)/airflow
 	airflow db init
@@ -49,6 +49,10 @@ install_requirement :
 	
 	pyspark
 
+install :
+	create_venv
+	activate_venv
+	install_requirement
 
 ruff :
 	ruff check --fix
@@ -59,3 +63,12 @@ ruff :
 generatedocs :
 	mkdocs new .
 	mkdocs serve
+
+runapi :
+	unicorn
+
+runstreamlit :
+	# run streamlit app
+	# streamlit run app.py
+	@echo "Running Streamlit app..."
+	@streamlit run app.py
