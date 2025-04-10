@@ -25,3 +25,5 @@ openpyxl
 apache-airflow
 pyspark
 dbt-core
+streamlit
+pandas
